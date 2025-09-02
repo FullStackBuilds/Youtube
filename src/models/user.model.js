@@ -62,7 +62,7 @@ const userSchema = new mongoose.Schema(
 // we wont use arrow function here as the callback function because we do not have access of this context in arrow function
 
 /* These process are time taking process that is why we made the function as {'async'} 
-    and since these are mongoose middlewares it expects  (next) in callback fn parameter.
+    and these mongoose middlewares expects  (next) in callback fn parameter.
 */
 userSchema.pre("save", async function (next) {
     if (this.isModified("password")) {
