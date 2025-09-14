@@ -3,6 +3,8 @@ import ApiError from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import jwt from "jsonwebtoken";
+import { PREFIXES } from "@rstacruz/startup-name-generator/lib/constants.js";
 
 export const registerUser = asyncHandler(async (req, res, next) => {
     const { username, fullname, email, password } = req.body;
@@ -27,7 +29,16 @@ export const registerUser = asyncHandler(async (req, res, next) => {
 
     // console.log("req.files : ", req.files);
     const avatarLocalPath = req.files?.avatar[0]?.path; // path of avatar stored locally on the server
-    const coverImageLocalPath = req.files?.coverImage[0]?.path; // path of image stored locally on the server
+    // const coverImageLocalPath = req.files?.coverImage[0]?.path; // path of image stored locally on the server
+
+    let coverImageLocalPath;
+    if (
+        req.files &&
+        Array.isArray(req.files.coverImage) &&
+        req.files.coverImage.length > 0
+    ) {
+        coverImageLocalPath = req.files.coverImage[0].path;
+    }
 
     if (!avatarLocalPath) {
         throw new ApiError(400, "Avatar is required");
@@ -75,6 +86,263 @@ export const registerUser = asyncHandler(async (req, res, next) => {
     );
 });
 
+export const generateAccessAndRefreshToken = async (user_Id) => {
+    // make a db call
+
+    try {
+        const user = await User.findById(user_Id);
+
+        // generate access token
+        const accessToken = user.generateAccessToken();
+
+        // generate refresh token
+        const refreshToken = user.generateRefreshToken();
+
+        user.refreshToken = refreshToken; // CAUTION: abhi changes database mei propagate nhi hue hain
+
+        await user.save({ validateBeforeSave: false }); // this does not hash the pasword again on save event
+        return { accessToken, refreshToken };
+    } catch (error) {
+        throw new ApiError(
+            500,
+            "Something went wrong while generating access token"
+        );
+    }
+};
+
 export const loginUser = asyncHandler(async (req, res, next) => {
-    res.status(200).json({ message: "User logged in successfully" });
+    // req.body -> data
+    // email is not empty
+    // find the user
+    // check password
+    // access and refresh token
+    // send cookie
+
+    const { email, password } = req.body;
+
+    if (!email) {
+        throw new ApiError(400, "Email is required");
+    }
+
+    // find the user
+    const user = await User.findOne({
+        email,
+    });
+
+    if (!user) {
+        throw new ApiError(400, "User is not registered");
+    }
+
+    // check password(those methods are used through the returned "user" var from findOne)
+    const isPasswordValid = await user.isPasswordCorrect(password);
+
+    if (!isPasswordValid) {
+        throw new ApiError(401, "Invalid user credentials");
+    }
+
+    // access and refresh token
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+        user._id
+    );
+
+    const loggedInUser = await User.findById(user._id).select(
+        "-password -refreshToken"
+    );
+    // set cookies
+    const options = {
+        httpOnly: true,
+        secure: true,
+    };
+
+    return res
+        .status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options)
+        .json(
+            new ApiResponse(
+                200,
+                {
+                    user: loggedInUser,
+                    accessToken,
+                    refreshToken,
+                },
+                "User logged In Successfully"
+            )
+        );
+});
+
+export const logoutUser = asyncHandler(async (req, res, next) => {
+    // clear cookies
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: {
+                refreshToken: undefined,
+            },
+        },
+        {
+            new: true,
+        }
+    );
+
+    const options = {
+        httpOnly: true,
+        secure: true,
+    };
+
+    return res
+        .status(200)
+        .clearCookie("accessToken", options)
+        .clearCookie("refreshToken", options);
+});
+
+export const refreshAccessToken = asyncHandler(async (req, res) => {
+    try {
+        const incomingRefreshToken =
+            req?.cookies("refreshToken") || req.body.refreshToken;
+
+        if (!incomingRefreshToken) {
+            throw new ApiError(400, "Unauthorised request");
+        }
+
+        const decodedToken = jwt.verify(
+            incomingRefreshToken,
+            process.env.REFRESH_TOKEN_SECRET
+        );
+        if (!decodedToken) {
+            throw new ApiError(400, "Invalid refresh token");
+        }
+
+        const user = await User.findById(decodedToken?._id);
+        if (!user) {
+            throw new ApiError(400, "Invalid refresh token");
+        }
+
+        if (incomingRefreshToken !== user?.refreshToken) {
+            throw new ApiError(400, "Refresh token expired");
+        }
+
+        // generate new access and refresh tokens
+        const { newAccessToken, newRefreshToken } =
+            await generateAccessAndRefreshToken(user?._id);
+
+        const options = {
+            httpOnly: true,
+            secure: true,
+        };
+
+        // set token in cookies
+        res.status(200)
+            .cookie("accessToken", newAccessToken, options)
+            .cookie("refreshToken", newRefreshToken, options)
+            .json(
+                new ApiResponse(
+                    200,
+                    { refreshToken: newRefreshToken },
+                    "refresh token refreshed"
+                )
+            );
+    } catch (error) {
+        throw new ApiError(401, error?.message || "Invalid refresh Token");
+    }
+});
+
+export const changePassword = asyncHandler(async (req, res) => {
+    try {
+        const { oldPassword, newPassword } = req.body; // include confirm new password field in frontend and check if both are same
+
+        const user = await User.findById(req.user?._id);
+        if (!user) {
+            throw new ApiError(400, "Unauthorised Access");
+        }
+
+        // .methods functions are accessed through the object of User model
+        const isPasswordValid = await user.isPasswordCorrect(oldPassword);
+        if (!isPasswordValid) {
+            throw new ApiError(401, "Invalid password");
+        }
+
+        // save karo
+        user.password = newPassword; // CAUTION: abhi changes database mei propagate nhi hue hain
+
+        await user.save(); // pre hook will run will check if password is modified then hash the password
+
+        return res
+            .status(200)
+            .json(new ApiResponse(200, {}, "Password updated succesfully"));
+    } catch (error) {
+        throw new ApiError(400, error?.message || "password is not correct");
+    }
+});
+
+export const getCurrentUser = asyncHandler(async (req, res) => {
+    try {
+        const user = req.user;
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    { currentUser: user },
+                    "Current user fetched successfully"
+                )
+            );
+    } catch (error) {
+        throw new ApiError(
+            400,
+            error?.message || "Error in fetching current user"
+        );
+    }
+});
+
+export const updateAccountDetails = asyncHandler(async (req, res) => {
+    try {
+        const { fullname, email } = req.body;
+
+        if (!fullname || !email) {
+            throw new ApiError(400, "Fullname and email are required");
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.user?._id,
+            {
+                fullname,
+                email,
+            },
+            { new: true }
+        ).select(" -password ");
+
+        if (!user) {
+            throw new ApiError(400, "Cannot update account details");
+        }
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    user,
+                    "Account details updated successfully"
+                )
+            );
+    } catch (error) {
+        throw new ApiError(
+            400,
+            error?.message || "Error in updating account details"
+        );
+    }
+});
+
+export const updateAvatarImage = asyncHandler(async (req, res) => {
+    try {
+        let avatarLocalPath;
+
+        if (req.file && req.file.path) {
+            avatarLocalPath = req.file.path;
+        }
+
+        
+    } catch (error) {}
 });

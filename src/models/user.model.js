@@ -59,7 +59,7 @@ const userSchema = new mongoose.Schema(
 );
 
 // PRE hook: runs before saving user / these hooks are also called Middlewares
-// we wont use arrow function here as the callback function because we do not have access of this context in arrow function
+// we wont use arrow function here as the callback function because we do not have access of "this" context in arrow function
 
 /* These process are time taking process that is why we made the function as {'async'} 
     and these mongoose middlewares expects  (next) in callback fn parameter.
@@ -76,7 +76,7 @@ userSchema.post("save", function (doc) {
     console.log("New user created:", doc.username);
 });
 
-// adding new functions in userSchema through methods (here also we will not user arrow function as the callback for same reason)
+// adding new functions in userSchema through methods (here also we will not use arrow function as the callback for same reason)
 userSchema.methods.isPasswordCorrect = async function (password) {
     return await bcrypt.compare(password, this.password);
 };
