@@ -1,5 +1,7 @@
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs"; // comes built in with node js
+import ApiError from "./ApiError.js";
+import { AssertionError } from "assert";
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -27,5 +29,25 @@ export const uploadOnCloudinary = async (localFilePath) => {
         console.error("Error while uploading on cloudinary :", error);
         fs.unlinkSync(localFilePath);
         return null;
+    }
+};
+
+export const deleteOnCloudinary = async (fileId) => {
+    try {
+        if (!fileId) {
+            throw new ApiError(
+                400,
+                "public_id is required to delete on cloudinary"
+            );
+        }
+        const response = await cloudinary.uploader.destroy(fileId, {
+            resource_type: "auto",
+        });
+
+        if (response) console.log("Avatar deleted Successfully : ", response);
+
+        return response;
+    } catch (error) {
+        throw new ApiError(500, "Error in deleting file from cloudinary");
     }
 };

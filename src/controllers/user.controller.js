@@ -1,10 +1,9 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { uploadOnCloudinary, deleteOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
-import { PREFIXES } from "@rstacruz/startup-name-generator/lib/constants.js";
 
 export const registerUser = asyncHandler(async (req, res, next) => {
     const { username, fullname, email, password } = req.body;
@@ -61,7 +60,9 @@ export const registerUser = asyncHandler(async (req, res, next) => {
         email,
         password,
         avatar: avatar?.url,
+        avatarId: avatar.public_id,
         coverImage: coverImage?.url || "",
+        coverImageId: coverImage?.public_id || "",
     });
 
     // if (!user) {
@@ -272,7 +273,7 @@ export const changePassword = asyncHandler(async (req, res) => {
             .status(200)
             .json(new ApiResponse(200, {}, "Password updated succesfully"));
     } catch (error) {
-        throw new ApiError(400, error?.message || "password is not correct");
+        throw new ApiError(400, error?.message || "Error in changing password");
     }
 });
 
@@ -335,14 +336,121 @@ export const updateAccountDetails = asyncHandler(async (req, res) => {
     }
 });
 
-export const updateAvatarImage = asyncHandler(async (req, res) => {
+export const updateUserAvatar = asyncHandler(async (req, res) => {
     try {
-        let avatarLocalPath;
-
-        if (req.file && req.file.path) {
-            avatarLocalPath = req.file.path;
+        const newAvatarFileLocalPath = req.file?.path;
+        if (!newAvatarFileLocalPath) {
+            throw new ApiError(400, "avatar is required");
         }
 
-        
-    } catch (error) {}
+        // upload new avatar on cloudinary
+        const newAvatar = await uploadOnCloudinary(newAvatarFileLocalPath);
+
+        if (!newAvatar) {
+            throw new ApiError(400, "Cannot upload new avatar on cloudinary");
+        }
+
+        const user = await User.findById(req.user?._id);
+
+        // delete old avatar
+        const deletedOldAvatar = await deleteOnCloudinary(user?.avatarId);
+        if (!deletedOldAvatar) {
+            throw new ApiError(400, "Cannot delete old avatar");
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(
+            req.user?._id,
+            {
+                $set: {
+                    avatar: newAvatar?.url,
+                    avatarId: newAvatar?.public_id,
+                },
+            },
+            { new: true }
+        ).select(" -password -refreshToken");
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    updatedUser,
+                    "Avatar changed successfully "
+                )
+            );
+    } catch (error) {
+        throw new ApiError(
+            400,
+            error?.message || "Error in changing the Avatar"
+        );
+    }
+});
+
+export const updateUserCoverImage = asyncHandler(async (req, res) => {
+    try {
+        const newCoverImageFileLocalPath = req.file?.path;
+        if (!newCoverImageFileLocalPath) {
+            throw new ApiError(400, "avatar is required");
+        }
+
+        // upload new avatar on cloudinary
+        const newCoverImage = await uploadOnCloudinary(
+            newCoverImageFileLocalPath
+        );
+
+        if (!newCoverImage) {
+            throw new ApiError(
+                400,
+                "Cannot upload new cover image on cloudinary"
+            );
+        }
+
+        const user = await User.findById(req.user?._id);
+
+        // delete old cover image
+        const deletedOldCoverImage = await deleteOnCloudinary(
+            user?.coverImageId
+        );
+        if (!deletedOldCoverImage) {
+            throw new ApiError(
+                400,
+                "Cannot delete old cover image on cloudinary"
+            );
+        }
+
+        // user.avatar = newAvatar?.url;
+        // user.avatarId = newAvatar?.public_id;
+
+        // user.save({ validateBeforeSave: false });
+
+        const updatedUser = await User.findByIdAndUpdate(
+            req.user?._id,
+            {
+                $set: {
+                    coverImage: newCoverImage?.url,
+                    coverImageId: newCoverImage?.public_id,
+                },
+            },
+            { new: true }
+        ).select(" -password -refreshToken");
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    updatedUser,
+                    "Cover image changed successfully "
+                )
+            );
+    } catch (error) {
+        throw new ApiError(
+            400,
+            error?.message || "Error in changing the Cover Image"
+        );
+    }
+});
+
+export const getUserChannelProfile = asyncHandler(async (req, res) => {
+    
 });

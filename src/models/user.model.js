@@ -33,7 +33,16 @@ const userSchema = new mongoose.Schema(
             required: true,
         },
 
+        avatarId: {
+            type: String,
+            required: true,
+        },
+
         coverImage: {
+            type: String,
+        },
+
+        coverImageId: {
             type: String,
         },
 
@@ -107,6 +116,5 @@ userSchema.methods.generateRefreshToken = function () {
         }
     );
 };
-
 
 export const User = mongoose.model("User", userSchema);
