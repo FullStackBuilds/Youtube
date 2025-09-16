@@ -176,27 +176,31 @@ export const loginUser = asyncHandler(async (req, res, next) => {
 export const logoutUser = asyncHandler(async (req, res, next) => {
     // clear cookies
 
-    const user = await User.findByIdAndUpdate(
-        req.user?._id,
-        {
-            $unset: {
-                refreshToken: 1,
+    try {
+        const user = await User.findByIdAndUpdate(
+            req.user?._id,
+            {
+                $unset: {
+                    refreshToken: "",
+                },
             },
-        },
-        {
-            new: true,
-        }
-    );
+            {
+                new: true,
+            }
+        );
 
-    const options = {
-        httpOnly: true,
-        secure: true,
-    };
+        const options = {
+            httpOnly: true,
+            secure: true,
+        };
 
-    return res
-        .status(200)
-        .clearCookie("accessToken", options)
-        .clearCookie("refreshToken", options);
+        return res
+            .status(200)
+            .clearCookie("accessToken", options)
+            .clearCookie("refreshToken", options);
+    } catch (error) {
+        throw new ApiError(400, error?.message || "Error in logout user");
+    }
 });
 
 export const refreshAccessToken = asyncHandler(async (req, res) => {
