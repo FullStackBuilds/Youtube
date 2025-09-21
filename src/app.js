@@ -19,5 +19,8 @@ app.use(cookieParser());
 // route imports
 import userRouter from "./routes/user.routes.js";
 
-// standard practice to make routes like this in real world 
+// standard practice to make routes like this in real world
 app.use("/api/v1/users", userRouter);
+
+import videoRouter from "./routes/video.routes.js";
+app.use("/api/v1/videos", videoRouter);

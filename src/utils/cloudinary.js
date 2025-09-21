@@ -32,6 +32,28 @@ export const uploadOnCloudinary = async (localFilePath) => {
     }
 };
 
+export const uploadVideoOnCloudinary = async (localFilePath) => {
+    try {
+        if (!localFilePath) return null;
+
+        // upload file on cloudinary
+        const response = await cloudinary.uploader.upload(localFilePath, {
+            resource_type: "video",
+            folder: "videos",
+            chunk_size: 6000000,
+        });
+
+        console.log("Video File uploaded successfully :", response);
+        fs.unlinkSync(localFilePath);
+        return response;
+    } catch (error) {
+        // if upload error then delete file locally saved on your server using file system module
+        console.error("Error while uploading on cloudinary :", error);
+        if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+        return null;
+    }
+};
+
 export const deleteOnCloudinary = async (fileId) => {
     try {
         if (!fileId) {
@@ -49,5 +71,25 @@ export const deleteOnCloudinary = async (fileId) => {
         return response;
     } catch (error) {
         throw new ApiError(500, "Error in deleting file from cloudinary");
+    }
+};
+
+export const deleteVideoOnCloudinary = async (fileId) => {
+    try {
+        if (!fileId) {
+            throw new ApiError(
+                400,
+                "public_id is required to delete on cloudinary"
+            );
+        }
+        const response = await cloudinary.uploader.destroy(fileId, {
+            resource_type: "video",
+        });
+
+        if (response) console.log("Video deleted Successfully : ", response);
+
+        return response;
+    } catch (error) {
+        throw new ApiError(500, "Error in deleting Video file from cloudinary");
     }
 };
